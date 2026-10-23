@@ -1,0 +1,14 @@
+<View>
+  <Header value="Compare overall musical sound: groove, timbre, and instrumentation. Similarity, not personal preference." />
+  <Header value="Reference" />
+  <Audio name="reference" value="$reference_audio" />
+  <Header value="Candidate" />
+  <Audio name="candidate" value="$candidate_audio" />
+  <Choices name="similarity" toName="candidate" choice="single-radio" required="true">
+    <Choice value="Unrelated" />
+    <Choice value="Somewhat similar" />
+    <Choice value="Strongly similar" />
+    <Choice value="Unsure" />
+  </Choices>
+  <TextArea name="note" toName="candidate" placeholder="Optional: what matched or felt wrong?" />
+</View>

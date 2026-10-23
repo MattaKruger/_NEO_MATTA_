@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+*.npz
+*.flac
+.ruff_cache/
+.cache/
+.DS_Store
+# Durable listening batches and Label Studio database; back up before deleting.
+qa/

@@ -1,0 +1,40 @@
+[project]
+name = "neo-metta-v2"
+version = "0.1.0"
+description = "Extract MuQ representations from local FLAC files into PostgreSQL"
+readme = "README.md"
+authors = [
+    { name = "Matthijs Kruger", email = "matthijs.kruger@group.one" }
+]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "muq",
+    "librosa",
+    "numpy>=2.2",
+    "numba",
+    "torch",
+    "sqlalchemy>=2.0,<3",
+    "psycopg[binary]>=3,<4",
+    "pgvector",
+    "soundfile",
+]
+
+[project.optional-dependencies]
+effnet = [
+    "essentia-tensorflow==2.1b6.dev1389",
+]
+
+[dependency-groups]
+dev = ["ruff", "ty"]
+
+[tool.uv]
+# MuQ 0.1.0 passes EasyDict to the Conformer encoder; Transformers 5 requires
+# private PretrainedConfig attention fields that EasyDict does not supply.
+constraint-dependencies = ["transformers<5"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
