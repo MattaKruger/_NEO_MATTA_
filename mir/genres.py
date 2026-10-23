@@ -107,7 +107,13 @@ def classify_tracks(engine: Engine, track_id: int | None) -> None:
         )
         if abs(len(audio) / SAMPLE_RATE - row["analysis_duration"]) > 1 / SAMPLE_RATE:
             raise ValueError("Source file no longer contains the entire stored slice.")
-        scores = pool_predictions(model(audio))
+        try:
+            scores = pool_predictions(model(audio))
+        except RuntimeError as error:
+            raise ValueError(
+                f"Track {row['id']}: EffNet inference failed for the stored "
+                f"{row['analysis_duration']:g} second window: {error}"
+            ) from error
         top_labels = [
             {"genre": labels[int(i)], "score": float(scores[i])}
             for i in np.argsort(-scores, kind="stable")[:5]

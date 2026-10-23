@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 .env
+.env.*
+!.env.example
+# Local music and artwork are data, not source.
+/songs/
 *.npz
 *.flac
 .ruff_cache/

@@ -68,6 +68,26 @@ class AnalyzerChecks(unittest.TestCase):
                 audio = model.call_args.args[0]
                 self.assertEqual((audio.shape, audio.dtype), ((16000,), np.float32))
                 self.assertEqual(save.call_args.args[3][0]["genre"], "Genre---7")
+            # A native graph failure must identify the slice and keep earlier saves.
+            saved: list[int] = []
+            model.side_effect = [predictions, RuntimeError("Tensorflow reshape failed")]
+            with (
+                patch.object(
+                    genres, "classification_targets", return_value=[dict(row, id=41), row]
+                ),
+                patch.object(genres, "load_classifier", return_value=(model, labels)),
+                patch.object(
+                    genres,
+                    "save_genres",
+                    side_effect=lambda _, identifier, *_args: saved.append(identifier),
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaises(ValueError) as failure:
+                    genres.classify_tracks(MagicMock(), None)
+                self.assertIn("42", str(failure.exception))
+                self.assertIn("1 second", str(failure.exception))
+                self.assertEqual(saved, [41])
             with (
                 patch.object(genres, "classification_targets", return_value=[]),
                 patch.object(genres, "load_classifier") as load,

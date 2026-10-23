@@ -1,6 +1,45 @@
 # Implementation verification
 
-## Latest update: representative slices (2026-09-08)
+## Current checkout — 2026-10-23
+
+Active checkout: `~/mana/_NEO_MATTA_`, remote
+`git@github.com:MattaKruger/_NEO_MATTA_.git`. The user ran the migration script
+successfully. All three older projects are now siblings under `~/mana`, and the
+four original source directories are absent from `~/personal_projects`.
+The imported baseline is `7197cd3`; the original V2 Git metadata remains in
+ignored `.cache/pre-move.git`.
+
+| Check | Current evidence | Limit |
+| --- | --- | --- |
+| Relocation | Source files match the imported baseline; clone remote retained. Repaired 21 generated environment launchers/activation scripts referencing the old path. | Local environments and data remain outside Git. |
+| Locked commands | `UV_CACHE_DIR=.cache/uv uv lock --check --offline` passes; no package upgrades or new dependencies. | A fresh online installation was not attempted. |
+| Full local verification | `UV_CACHE_DIR=.cache/uv UV_OFFLINE=1 NUMBA_CACHE_DIR=.cache/numba OMP_NUM_THREADS=2 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 just verify` passes Ruff format/lint, ty, and 9 tests; 2 database tests skipped. | Audioread emits deprecation warnings for Python modules scheduled for removal after Python 3.11. |
+| MuQ checkpoint | Real cached `OpenMuQ/MuQ-large-msd-iter`, CPU, 3 seconds of Troy audio at 36.5s: 13 hidden states plus final state, all 14 vectors finite, nonzero, dimension 1024; final shape `(1, 75, 1024)`. | Ran before moving the identical source/environment; no database writes or MPS claim. |
+| EffNet | Real cached graph and matching 400-label vocabulary classified a 30-second window after relocation; `(30, 400)` frame scores, top label `Electronic---Techno` about 0.9684. | Real 1-, 2-, and 3-second windows fail in the native graph with a reshape error. No universal minimum duration is established. |
+| Failure handling | Regression reproduced the uncaught native `RuntimeError`, then passed after converting it to a slice-specific `ValueError`. The test preserves the first successful result and rejects saving a prediction for the failing second slice. A subsequent real native one-second inference confirmed the contextual error and absence of a saved result. | Storage was replaced at the database boundary for that native check; live transactions remain unverified. |
+| CI | Added an Ubuntu workflow with an isolated PostgreSQL 18/pgvector service, pinned action revisions, locked dependencies, and all existing tests enabled. | Hosted execution is pending. Linux PyTorch installs CUDA dependencies despite CPU-only test execution. |
+
+The optional EffNet dependency was already locked. A proposed dependency-group
+change could not be resolved from incomplete offline index metadata; it was
+discarded. The original dependency manifest and resolved package versions remain
+unchanged. Routine `uv run --locked` retains installed extras; exact
+`uv sync --locked` removes EffNet unless `--extra effnet` is supplied.
+
+Still blocked or unverified:
+
+- Docker API access is denied for the local Docker socket. No database reset or
+  data migration was performed, and live SQL tests remain unverified.
+- GitHub SSH fails at DNS resolution. No push or hosted CI run is claimed.
+- The sandbox marks this checkout's `.git` read-only; the foundation changes may
+  require a normal-Terminal commit and push.
+- Label Studio installation, real collection export, browser playback, review
+  edits, restart persistence, and full JSON/report reconciliation remain pending.
+- Real MPS inference and broad musical retrieval quality remain unverified.
+
+CI uses the official [uv GitHub Actions guidance](https://docs.astral.sh/uv/guides/integration/github/)
+and [GitHub PostgreSQL service guidance](https://docs.github.com/en/actions/tutorials/use-containerized-services/create-postgresql-service-containers).
+
+## Historical update: representative slices (2026-09-08)
 
 - `UV_CACHE_DIR=.cache/uv just check`: Ruff format, Ruff lint, and ty all pass.
 - `UV_CACHE_DIR=.cache/uv uv run python -m unittest -v test_main`: six tests

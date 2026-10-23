@@ -1,7 +1,13 @@
-# MuQ Local FLAC Analyzer
+# Neo Metta v2
 
 A small Python CLI for extracting music representations from local FLAC files,
 storing pooled vectors in PostgreSQL, and finding similar recordings.
+
+This is the active rewrite, now at `~/mana/_NEO_MATTA_`. The older `metta`,
+`neo-metta`, and `metta-old` folders live alongside it as references.
+Start with [current verification](VERIFICATION.md) and the [handover](HANDOVER.md).
+Worker redesign and new search modes remain parked while the listening workflow
+is verified.
 
 ## Prerequisites and setup
 
@@ -11,7 +17,7 @@ Docker runtime, then run these commands from this directory in your normal macOS
 ```bash
 docker compose up -d
 docker compose ps
-uv sync
+uv sync --locked
 ```
 
 The project targets **Python 3.11**; uv can obtain the interpreter if necessary.
@@ -42,7 +48,9 @@ With `just` installed, the same commands are available through the `justfile`:
 
 ```bash
 just                     # List available recipes
-just setup               # uv sync, then start PostgreSQL and wait for health
+just setup               # Locked sync, then start PostgreSQL and wait for health
+just sync-effnet         # Locked sync including the optional classifier
+just verify              # Formatting, lint, types, and all local tests
 just check               # Ruff format/lint and ty
 just test
 just test-db              # Include live PostgreSQL checks
@@ -62,7 +70,7 @@ The direct `uv` and Docker commands below remain available.
 ## Analyze
 
 ```bash
-uv run python main.py analyze /path/to/song.flac
+uv run --locked python main.py analyze /path/to/song.flac
 ```
 
 By default this loads the first **30 seconds**, as mono float32 audio resampled to
@@ -70,7 +78,7 @@ exactly **24,000 Hz**. It reads the file header for the original duration withou
 decoding the whole recording. Choose a different window with:
 
 ```bash
-uv run python main.py analyze /path/to/song.flac \
+uv run --locked python main.py analyze /path/to/song.flac \
   --offset 60 \
   --duration 30
 ```
@@ -90,13 +98,13 @@ read from model output.
 The default `--device auto` selects MPS when available, otherwise CPU. To force CPU:
 
 ```bash
-uv run python main.py analyze /path/to/song.flac --device cpu
+uv run --locked python main.py analyze /path/to/song.flac --device cpu
 ```
 
 To require MPS:
 
 ```bash
-uv run python main.py analyze /path/to/song.flac --device mps
+uv run --locked python main.py analyze /path/to/song.flac --device mps
 ```
 
 An explicit MPS request fails clearly if unavailable. Codex's macOS sandbox can
@@ -104,7 +112,7 @@ report MPS unavailable even when your normal Terminal supports it. Verify from
 your normal Terminal:
 
 ```bash
-uv run python -c 'import torch; print("MPS available:", torch.backends.mps.is_available())'
+uv run --locked python -c 'import torch; print("MPS available:", torch.backends.mps.is_available())'
 ```
 
 The official `muq` package loads `OpenMuQ/MuQ-large-msd-iter` and automatically
@@ -115,9 +123,9 @@ MuQ 0.1.0 passes an `EasyDict` configuration to its Conformer encoder. Transform
 5 expects private attention configuration fields that this object lacks, causing
 `AttributeError: 'EasyDict' object has no attribute '_attn_implementation'`.
 `pyproject.toml` constrains this transitive dependency to `transformers<5`, and
-`uv.lock` resolves to 4.57.6. Run `just sync` to apply the downgrade before retrying
-analysis. The downgrade's inference check remains pending in the sandbox because
-the required wheel is not cached and PyPI access is blocked.
+`uv.lock` resolves to 4.57.6. CPU inference with that version and the real cached
+checkpoint has passed; see [verification](VERIFICATION.md). Run `just sync` to
+install the locked environment.
 
 Inference uses batch size 1, fp32, evaluation mode, and `torch.inference_mode()`.
 Each hidden tensor is mean-pooled over time on its inference device; only pooled
@@ -129,8 +137,8 @@ compatibility and peak memory still need a real model run on the target machine.
 ### Optional NPZ export
 
 ```bash
-uv run python main.py analyze /path/to/song.flac --save-npz
-uv run python main.py analyze /path/to/song.flac --save-npz --output /tmp/inspection.npz
+uv run --locked python main.py analyze /path/to/song.flac --save-npz
+uv run --locked python main.py analyze /path/to/song.flac --save-npz --output /tmp/inspection.npz
 ```
 
 The default output is `/path/to/song.muq.npz`, next to the input. `--output` requires
@@ -138,7 +146,7 @@ The default output is `/path/to/song.muq.npz`, next to the input. `--output` req
 `last_hidden_state`, each a one-dimensional float32 pooled vector.
 
 ```bash
-uv run python -c 'import numpy as np; a = np.load("/tmp/inspection.npz"); print({k: a[k].shape for k in a.files})'
+uv run --locked python -c 'import numpy as np; a = np.load("/tmp/inspection.npz"); print({k: a[k].shape for k in a.files})'
 ```
 
 PostgreSQL is always used. NPZ export happens after commit; if export fails, the
@@ -150,7 +158,7 @@ archives are overwritten, and the input FLAC cannot be used as the output path.
 Use a track ID printed by `analyze` and a zero-based hidden-state layer:
 
 ```bash
-uv run python main.py search \
+uv run --locked python main.py search \
   --track-id 1 \
   --layer 12 \
   --limit 5
@@ -210,12 +218,17 @@ parallel Numba kernels, normalization helpers, or unused `numeric.py` module.
 
 ## Development checks
 
+Use `just verify` for all local checks, or run the individual commands below.
+The [GitHub Actions workflow](.github/workflows/verify.yml) additionally runs the
+existing PostgreSQL checks against an isolated pgvector database. It needs no
+pretrained weights or GPU. Its first hosted execution remains unverified.
+
 ```bash
-uv run ruff format --check .
-uv run ruff check .
-uv run ty check
-uv run python -m unittest -v test_main
-uv run python -c 'import numba; print(numba.__version__)'
+uv run --locked ruff format --check .
+uv run --locked ruff check .
+uv run --locked ty check
+uv run --locked python -m unittest -v test_main test_lab test_lab_database
+uv run --locked python -c 'import numba; print(numba.__version__)'
 ```
 
 The ordinary checks use generated stereo FLAC audio and real PyTorch tensors to
@@ -228,7 +241,7 @@ Device selection mocks do not demonstrate real MPS inference.
 To additionally exercise PostgreSQL, run:
 
 ```bash
-RUN_DATABASE_TESTS=1 uv run python -m unittest -v test_main
+RUN_DATABASE_TESTS=1 uv run --locked python -m unittest -v test_main test_lab test_lab_database
 ```
 
 This checks automatic initialization, vector round trips, duplicate prevention,
@@ -253,32 +266,32 @@ docker compose up -d
 
 ## Verification status in Codex
 
-Implementation was written in a sandbox where PyPI DNS resolution failed and access
-to the Docker socket was denied. The cache also lacked MuQ and enough Python 3.11
-dependencies to complete the original offline sync. Dependencies and model weights
-have since been installed from Terminal, and `uv.lock` is present. Real CPU model
-inference reproduced the Transformers 5 compatibility error described above. The
-lock now resolves to Transformers 4.57.6; installation and inference with that version
-remain pending. PostgreSQL access is still blocked in the sandbox. Current results
-and earlier supplemental checks are recorded in `VERIFICATION.md`.
+The current checkout passes local formatting, lint, type checks, and nine tests;
+two opt-in database tests are skipped. The real cached MuQ checkpoint runs on CPU,
+and the real EffNet graph classified a 30-second window. Short EffNet windows can
+fail in the native graph; classification now identifies the affected slice and
+keeps previously committed results. PostgreSQL, MPS, the Label Studio UI, and the
+first hosted CI execution remain separate verification gates.
+
+[VERIFICATION.md](VERIFICATION.md) separates current results from historical
+setup failures. The lockfile is committed. Routine commands use `--locked` so a
+manifest/lock mismatch fails rather than silently changing dependencies.
 
 Run the remaining checks from your normal macOS Terminal:
 
 ```bash
-uv sync
+uv sync --locked
 docker compose up -d --wait
-uv run ruff format --check .
-uv run ruff check .
-uv run ty check
-RUN_DATABASE_TESTS=1 uv run python -m unittest -v test_main
-uv run python -c 'import numba, torch; print("Numba:", numba.__version__); print("MPS:", torch.backends.mps.is_available())'
-uv run python main.py analyze /path/to/song.flac --device cpu --save-npz
-uv run python main.py analyze /path/to/song.flac --device auto --offset 10
+just verify
+just test-db
+uv run --locked python -c 'import numba, torch; print("Numba:", numba.__version__); print("MPS:", torch.backends.mps.is_available())'
+uv run --locked python main.py analyze /path/to/song.flac --device cpu --save-npz
+uv run --locked python main.py analyze /path/to/song.flac --device auto --offset 10
 ```
 
 Then use the printed source track ID with `search --track-id ID --layer 0 --limit 5`.
 If MPS is available, also run `analyze /path/to/song.flac --device mps` to exercise
-that backend. Keep the generated `uv.lock` in version control once resolution succeeds.
+that backend. Keep `uv.lock` in version control.
 
 ## Sources
 
@@ -301,7 +314,7 @@ just slices 'songs/Troy - Omen(1).flac'
 # Optional shorter windows or CPU inference:
 just slices 'songs/Troy - Omen(1).flac' --slice-duration 20 --device cpu
 # Equivalent without just:
-uv run python main.py slices /path/to/song.flac --preview
+uv run --locked python main.py slices /path/to/song.flac --preview
 ```
 
 This explicitly scans the **whole track** as mono 24 kHz float32 audio on CPU.
@@ -348,7 +361,7 @@ No database reset or schema change is required.
 just slices songs/ --preview
 just slices songs/
 # Equivalent Python CLI:
-uv run python main.py slices songs/ --slice-duration 20 --device cpu
+uv run --locked python main.py slices songs/ --slice-duration 20 --device cpu
 ```
 
 Directories process immediate `.flac` children (case-insensitive extension) in sorted
@@ -364,7 +377,7 @@ is not implemented. `analyze` continues to accept a single FLAC window.
 Classify an existing slice without rerunning MuQ:
 
 ```bash
-uv sync --extra effnet
+uv sync --locked --extra effnet
 just classify --track-id 42
 just classify --all
 ```
@@ -380,6 +393,10 @@ to `.cache/effnet/`. EffNet reads each stored offset/duration as mono float32 at
 frames, including short slices. Short-window labels may be less informative.
 The fixed graph batch is 64 spectrogram patches, with padded batch outputs removed.
 Classifier inference is separate from PyTorch/MPS; no MPS acceleration is assumed.
+Native short-window handling is limited: one-, two-, and three-second windows
+failed with a graph reshape error in the tested runtime, while 30 seconds worked.
+No universal cutoff is inferred. Failures stop the batch with the slice ID and
+duration, preserving earlier successful writes; no fabricated prediction is saved.
 
 All 400 mean sigmoid scores and the top five labels are saved in a new
 `genre_predictions` table keyed by slice ID and model version. The table initializes
@@ -392,10 +409,10 @@ Python 3.11 Apple Silicon wheel requiring macOS 15+. See the
 [official model metadata](https://essentia.upf.edu/models/music-style-classification/discogs-effnet/discogs-effnet-bs64-1.json)
 and [patch handling](https://essentia.upf.edu/reference/std_TensorflowPredictEffnetDiscogs.html).
 
-Implementation verification: the Codex sandbox could not reach PyPI to install
-EffNet or regenerate `uv.lock`. The optional dependency is declared, but the lock
-still needs refreshing with `uv sync --extra effnet` in Terminal. Native import,
-real EffNet predictions, and database writes remain unverified here. After syncing:
+The optional dependency is included in `uv.lock`. Native import and a real
+30-second prediction passed on this Mac. Database writes remain unverified here.
+Use `just sync-effnet` to retain the classifier during an exact dependency sync;
+plain `just sync` installs only the base environment. After syncing:
 
 ```bash
 just check
